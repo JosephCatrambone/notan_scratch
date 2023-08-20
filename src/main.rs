@@ -37,10 +37,14 @@ const FRAG: ShaderSource = fragment_shader! {
 
     layout(location = 0) in vec3 v_color;
     layout(location = 1) in vec2 v_uv;
+    
     layout(location = 0) out vec4 color;
-
+    
+	layout(binding = 0) uniform sampler2D u_texture;
+    
     void main() {
-        color = vec4(v_color, 1.0);
+        //color = vec4(v_color, 1.0);
+        color = texture(u_texture, v_uv);
     }
     "#
 };
@@ -53,6 +57,9 @@ struct State {
     vbo: Buffer,
 	ibo: Buffer,
 	ubo: Buffer,
+	missing_texture: Texture,
+	render_texture: RenderTexture,
+	texture: Asset<Texture>,
 	object_offset: (f32, f32),
 }
 
@@ -72,9 +79,21 @@ fn main() -> Result<(), String> {
 		.build()
 }
 
-fn setup(gfx: &mut Graphics) -> State {
+fn setup(assets: &mut Assets, gfx: &mut Graphics) -> State {
 	let font = gfx
 		.create_font(include_bytes!("../assets/Ubuntu-Regular.ttf"))
+		.unwrap();
+	
+	let texture = gfx
+		.create_texture()
+        //.from_bytes(&bytes, width, height)
+		.from_empty_buffer(320, 240)
+        .build()
+        .unwrap();
+	let pending_texture = assets.load_asset(&"assets/cat.png").unwrap();
+	let render_texture = gfx
+		.create_render_texture(320, 240)
+		.build()
 		.unwrap();
 	
 	//ClearOptions::color(Color::new(0.1, 0.2, 0.3, 1.0));
@@ -95,6 +114,7 @@ fn setup(gfx: &mut Graphics) -> State {
 			write: true,
 			compare: CompareMode::Less,
 		})
+		.with_texture_location(0, "u_texture")
 		.build()
 		.unwrap();
 	
@@ -145,6 +165,9 @@ fn setup(gfx: &mut Graphics) -> State {
 		vbo: vertex_buffer,
 		ibo: index_buffer,
 		ubo: uniform_buffer,
+		missing_texture: texture,
+		texture: pending_texture,
+		render_texture,
 		object_offset: (0.0f32, 0.0f32),
 	}
 }
@@ -169,7 +192,7 @@ fn update(app: &mut App, state: &mut State) {
 	}
 }
 
-fn draw(gfx: &mut Graphics, plugins: &mut Plugins, state: &mut State) {
+fn draw(app: &mut App, gfx: &mut Graphics, plugins: &mut Plugins, state: &mut State) {
 	// Deferred UI stuff?
 	let mut ui_output = plugins.egui(|ctx| {
         egui::Window::new("egui window").show(ctx, |ui| {
@@ -181,8 +204,7 @@ fn draw(gfx: &mut Graphics, plugins: &mut Plugins, state: &mut State) {
 
             ui.separator();
             if ui.button("Quit").clicked() {
-                // app.exit();
-				// Do we want &mut App as an input?
+                app.exit();
             }
 
             ui.separator();
@@ -193,10 +215,21 @@ fn draw(gfx: &mut Graphics, plugins: &mut Plugins, state: &mut State) {
         });
     });
 	
+	// Updating textures:
+	/*
+	gfx.update_texture(&mut state.texture)
+        .with_data(&state.bytes)
+        .update()
+        .unwrap();
+	*/
+	//let image_on_rt2 = some_method_that_binds_texture_and_returns_renderer(gfx, state, tex, None);
+    //gfx.render_to(&state.render_texture2, &image_on_rt2);
+	
 	// 3D drawing:
 	let mut renderer = gfx.create_renderer();
 	renderer.begin(Some(&state.clear_options));
 	renderer.set_pipeline(&state.pipeline);
+	renderer.bind_texture(0, &state.missing_texture);
 	//renderer.bind_buffer(&state.vbo);
 	renderer.bind_buffers(&[
 		&state.vbo,
@@ -223,6 +256,8 @@ fn draw(gfx: &mut Graphics, plugins: &mut Plugins, state: &mut State) {
 	draw.text(&state.font, &format!("Last key: key:?"))
 		.position(10.0, 560.0)
 		.size(20.0);
+	
+	//draw.image(&state.texture);
 	
 	gfx.render(&draw);
 	
